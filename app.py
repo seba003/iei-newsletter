@@ -48,7 +48,7 @@ if st.session_state.logged_in:
 # ---------------- GITHUB CONFIG ---------------- #
 
 GITHUB_USERNAME = "seba003"
-REPO_NAME = "seba003.github.io"
+REPO_NAME = "iei-newsletter"
 BRANCH = "main"
 
 try:
