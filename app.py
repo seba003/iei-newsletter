@@ -18,8 +18,8 @@ os.makedirs("static", exist_ok=True)
 
 # ---------------- ADMIN LOGIN ---------------- #
 
-ADMIN_EMAIL = "sebastinaero@gmail.com"
-ADMIN_PASSWORD = "ieimlc_2026"
+ADMIN_EMAIL = "madurailc@ieindia.org"
+ADMIN_PASSWORD = "ieimlc_seba_2026"
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
