@@ -1,25 +1,26 @@
-# ---------------- IMPORTS ---------------- #
+# ================== IMPORTS ================== #
 
 import streamlit as st
 import json
 import os
 import base64
 import requests
+import uuid
 from datetime import datetime
 
-# ---------------- CONFIG ---------------- #
+# ================== CONFIG ================== #
 
 st.set_page_config(page_title="IEI Newsletter", layout="wide")
 
-# ---------------- FOLDERS ---------------- #
+# ================== FOLDERS ================== #
 
 os.makedirs("pdf", exist_ok=True)
 os.makedirs("static", exist_ok=True)
 
-# ---------------- ADMIN LOGIN ---------------- #
+# ================== ADMIN LOGIN ================== #
 
 ADMIN_EMAIL = "madurailc@ieindia.org"
-ADMIN_PASSWORD = "ieimlc_seba_2026"
+ADMIN_PASSWORD = "ieimlc_2026"
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -30,7 +31,7 @@ def login():
     email = st.sidebar.text_input("Email", key="login_email")
     password = st.sidebar.text_input("Password", type="password", key="login_pass")
 
-    if st.sidebar.button("Login", key="login_btn"):
+    if st.sidebar.button("Login"):
         if email == ADMIN_EMAIL and password == ADMIN_PASSWORD:
             st.session_state.logged_in = True
             st.sidebar.success("Login successful")
@@ -38,14 +39,14 @@ def login():
             st.sidebar.error("Invalid credentials")
 
 def logout():
-    if st.sidebar.button("Logout", key="logout_btn"):
+    if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
 
 login()
 if st.session_state.logged_in:
     logout()
 
-# ---------------- GITHUB CONFIG ---------------- #
+# ================== GITHUB CONFIG ================== #
 
 GITHUB_USERNAME = "seba003"
 REPO_NAME = "iei-newsletter"
@@ -58,26 +59,47 @@ except:
 
 BASE_URL = f"https://api.github.com/repos/{GITHUB_USERNAME}/{REPO_NAME}/contents/"
 
-# ---------------- GITHUB FUNCTIONS ---------------- #
+# ================== UNIQUE ID ================== #
+
+def generate_id():
+    return str(uuid.uuid4())
+
+# ================== GITHUB FUNCTIONS ================== #
 
 def load_github_json(filename):
     try:
         url = BASE_URL + filename
-        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json"
+        }
+
         r = requests.get(url, headers=headers)
 
         if r.status_code == 200:
             content = r.json()["content"]
             decoded = base64.b64decode(content).decode()
             return json.loads(decoded)
-    except:
-        pass
+
+        elif r.status_code == 404:
+            save_github_json(filename, [])
+            return []
+
+        else:
+            st.error(f"Load error: {r.text}")
+
+    except Exception as e:
+        st.error(f"Load Exception: {e}")
+
     return []
 
 def save_github_json(filename, data):
     try:
         url = BASE_URL + filename
-        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json"
+        }
 
         r = requests.get(url, headers=headers)
         sha = r.json()["sha"] if r.status_code == 200 else None
@@ -85,7 +107,7 @@ def save_github_json(filename, data):
         content = base64.b64encode(json.dumps(data, indent=4).encode()).decode()
 
         payload = {
-            "message": "Update newsletter data",
+            "message": f"Update {filename}",
             "content": content,
             "branch": BRANCH
         }
@@ -93,11 +115,17 @@ def save_github_json(filename, data):
         if sha:
             payload["sha"] = sha
 
-        requests.put(url, json=payload, headers=headers)
-    except:
-        st.warning("GitHub save failed")
+        res = requests.put(url, json=payload, headers=headers)
 
-# ---------------- FILES ---------------- #
+        if res.status_code in [200, 201]:
+            st.success(f"{filename} saved to GitHub")
+        else:
+            st.error(f"GitHub Error: {res.text}")
+
+    except Exception as e:
+        st.error(f"Save Exception: {e}")
+
+# ================== FILE NAMES ================== #
 
 ANN_FILE = "announcements.json"
 EVENT_FILE = "events.json"
@@ -105,7 +133,7 @@ EXPERT_FILE = "expertise.json"
 RECOG_FILE = "recognitions.json"
 STUDENT_FILE = "students.json"
 
-# ---------------- LOAD DATA ---------------- #
+# ================== LOAD DATA ================== #
 
 announcements = load_github_json(ANN_FILE)
 events = load_github_json(EVENT_FILE)
@@ -113,7 +141,7 @@ expertise = load_github_json(EXPERT_FILE)
 recognitions = load_github_json(RECOG_FILE)
 students = load_github_json(STUDENT_FILE)
 
-# ---------------- HELPERS ---------------- #
+# ================== HELPERS ================== #
 
 def format_date(date_str):
     try:
@@ -121,24 +149,15 @@ def format_date(date_str):
     except:
         return "N/A"
 
-def save_uploaded_pdf(file, name):
-    if file:
-        with open(f"static/{name}", "wb") as f:
-            f.write(file.read())
-
-# ---------------- IMAGE UPLOAD ---------------- #
-
 def upload_image(file):
     if file:
         return base64.b64encode(file.read()).decode()
     return ""
 
-def display_image(img_data):
-    if img_data:
-        return f"data:image/png;base64,{img_data}"
+def display_image(img):
+    if img:
+        return f"data:image/png;base64,{img}"
     return ""
-
-# ---------------- TEXT CLEANING ---------------- #
 
 def clean_text(text):
     return text.strip().title() if text else ""
@@ -146,7 +165,7 @@ def clean_text(text):
 def clean_paragraph(text):
     return text.strip() if text else ""
 
-# ---------------- DIVISIONS ---------------- #
+# ================== DIVISIONS ================== #
 
 divisions = [
     "Aerospace Engineering","Agricultural Engineering","Architectural Engineering",
@@ -157,7 +176,7 @@ divisions = [
     "Production Engineering","Textile Engineering"
 ]
 
-# ---------------- SIDEBAR ---------------- #
+# ================== SIDEBAR ================== #
 
 st.sidebar.title("📚 IEI Newsletter")
 
@@ -166,71 +185,72 @@ page = st.sidebar.radio(
     ["Home", "Announcements", "Events", "Expertise", "Recognitions", "Students", "Admin"]
 )
 
-# ---------------- FILTERS ---------------- #
+# ================== BASIC UI ================== #
+
+st.markdown("""
+<div style="background:#0B3D91;color:white;padding:15px;border-radius:10px;text-align:center;">
+<h2>E-Newsletter</h2>
+<h4>Institution of Engineers (India)</h4>
+<h5>Madurai Local Centre</h5>
+</div>
+""", unsafe_allow_html=True)
+# ================== FILTERS ================== #
 
 st.sidebar.markdown("### 🔍 Filters")
 
-division_filter = st.sidebar.selectbox("Division", ["All"] + divisions, key="filter_div")
+division_filter = st.sidebar.selectbox("Engineering Division", ["All"] + divisions)
 
-from_date = st.sidebar.date_input("From", key="filter_from")
-to_date = st.sidebar.date_input("To", key="filter_to")
+col1, col2 = st.sidebar.columns(2)
+
+with col1:
+    from_date = st.date_input("From")
+
+with col2:
+    to_date = st.date_input("To")
 
 def filter_data(data):
-    result = data
+
+    filtered = data
 
     if division_filter != "All":
-        result = [d for d in result if d.get("division") == division_filter]
+        filtered = [d for d in filtered if d.get("division") == division_filter]
 
     if from_date and to_date:
-        result = [
-            d for d in result
+        filtered = [
+            d for d in filtered
             if d.get("date") and
             from_date.strftime("%Y-%m-%d") <= d.get("date") <= to_date.strftime("%Y-%m-%d")
         ]
 
-    return result
+    return filtered
 
-# ---------------- HEADER ---------------- #
 
-st.markdown("""
-<div style="display:flex;justify-content:space-between;align-items:center;
-background:linear-gradient(90deg,#0B3D91,#1E88E5);
-padding:15px;border-radius:12px;color:white;">
-
-<img src="https://www.ieindia.org/WebUI/img/logo.png" width="80">
-
-<div style="text-align:center;">
-<h2 style="margin:0;">E-Newsletter</h2>
-<h4 style="margin:0;">Institution of Engineers (India)</h4>
-<h5 style="margin:0;">Madurai Local Centre</h5>
-</div>
-
-<div>www.ieimadurailc.org</div>
-
-</div>
-""", unsafe_allow_html=True)
-
-# ---------------- STYLES ---------------- #
+# ================== STYLES ================== #
 
 st.markdown("""
 <style>
-.main-card {
-    background:#fff;
-    padding:15px;
-    border-radius:10px;
-    margin-bottom:10px;
-    box-shadow:0px 2px 6px rgba(0,0,0,0.1);
+.card {
+    background: #ffffff;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    box-shadow: 0px 2px 6px rgba(0,0,0,0.1);
 }
 .section-title {
     color:#0B3D91;
     border-bottom:2px solid #0B3D91;
+    margin-bottom:10px;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- ANALYTICS ---------------- #
 
-def show_analytics():
+# ================== HOME ================== #
+
+if page == "Home":
+
+    st.markdown("<h3 class='section-title'>🏠 Dashboard</h3>", unsafe_allow_html=True)
+
     col1, col2, col3 = st.columns(3)
     col1.metric("Announcements", len(announcements))
     col2.metric("Events", len(events))
@@ -240,55 +260,41 @@ def show_analytics():
     col4.metric("Recognitions", len(recognitions))
     col5.metric("Students", len(students))
 
-# ---------------- PAGE ROUTING ---------------- #
 
-if page == "Home":
-
-    st.markdown("<h3 class='section-title'>Home</h3>", unsafe_allow_html=True)
-
-    show_analytics()
-
-    if st.button("Generate Newsletter", key="gen_pdf"):
-        try:
-            file = generate_full_pdf(
-                announcements, events, expertise, recognitions, students
-            )
-            with open(file, "rb") as f:
-                st.download_button("Download PDF", f, file_name="newsletter.pdf")
-        except Exception as e:
-            st.error(e)
-
-# ---------------- ANNOUNCEMENTS ---------------- #
+# ================== ANNOUNCEMENTS ================== #
 
 elif page == "Announcements":
 
-    st.markdown("<h3 class='section-title'>Announcements</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 class='section-title'>📢 Announcements</h3>", unsafe_allow_html=True)
 
     for item in filter_data(announcements):
+
         st.markdown(f"""
-        <div class='main-card'>
+        <div class='card'>
         <b>{item.get('title')}</b><br>
-        {format_date(item.get('date'))} | {item.get('time')}<br>
-        {item.get('venue')}<br>
-        {item.get('guest')}<br><br>
+        <b>Date:</b> {format_date(item.get('date'))} | {item.get('time')}<br>
+        <b>Venue:</b> {item.get('venue')}<br>
+        <b>Guest:</b> {item.get('guest')}<br><br>
         {item.get('notes')}
         </div>
         """, unsafe_allow_html=True)
 
-# ---------------- EVENTS ---------------- #
+
+# ================== EVENTS ================== #
 
 elif page == "Events":
 
-    st.markdown("<h3 class='section-title'>Events</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 class='section-title'>🎯 Events Conducted</h3>", unsafe_allow_html=True)
 
     for item in filter_data(events):
+
         st.markdown(f"""
-        <div class='main-card'>
+        <div class='card'>
         <b>{item.get('title')}</b><br>
-        {format_date(item.get('date'))} | {item.get('time')}<br>
-        {item.get('venue')}<br>
-        {item.get('guest')}<br>
-        Participants: {item.get('participants')}<br><br>
+        <b>Date:</b> {format_date(item.get('date'))} | {item.get('time')}<br>
+        <b>Venue:</b> {item.get('venue')}<br>
+        <b>Guest:</b> {item.get('guest')}<br>
+        <b>Participants:</b> {item.get('participants')}<br><br>
         {item.get('report')}
         </div>
         """, unsafe_allow_html=True)
@@ -298,17 +304,19 @@ elif page == "Events":
                      caption=item.get("caption"),
                      use_container_width=True)
 
-# ---------------- EXPERTISE ---------------- #
+
+# ================== EXPERTISE ================== #
 
 elif page == "Expertise":
 
-    st.markdown("<h3 class='section-title'>Expertise</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 class='section-title'>👨‍🏫 Engineering Expertise</h3>", unsafe_allow_html=True)
 
     for item in expertise:
+
         st.markdown(f"""
-        <div class='main-card'>
+        <div class='card'>
         <b>{item.get('title')}</b><br>
-        Expert: {item.get('expert')}<br><br>
+        <b>Expert:</b> {item.get('expert')}<br><br>
         {item.get('report')}
         </div>
         """, unsafe_allow_html=True)
@@ -318,17 +326,19 @@ elif page == "Expertise":
                      caption=item.get("caption"),
                      use_container_width=True)
 
-# ---------------- RECOGNITIONS ---------------- #
+
+# ================== RECOGNITIONS ================== #
 
 elif page == "Recognitions":
 
-    st.markdown("<h3 class='section-title'>Recognitions</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 class='section-title'>🏆 Member Recognitions</h3>", unsafe_allow_html=True)
 
     for item in recognitions:
+
         st.markdown(f"""
-        <div class='main-card'>
+        <div class='card'>
         <b>{item.get('name')}</b><br>
-        {item.get('number')}<br><br>
+        <b>Member No:</b> {item.get('number')}<br><br>
         {item.get('achievement')}
         </div>
         """, unsafe_allow_html=True)
@@ -337,19 +347,21 @@ elif page == "Recognitions":
             st.image(display_image(item.get("image")),
                      use_container_width=True)
 
-# ---------------- STUDENTS ---------------- #
+
+# ================== STUDENTS ================== #
 
 elif page == "Students":
 
-    st.markdown("<h3 class='section-title'>Students</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 class='section-title'>🎓 Student Corner</h3>", unsafe_allow_html=True)
 
     for item in students:
+
         st.markdown(f"""
-        <div class='main-card'>
+        <div class='card'>
         <b>{item.get('name')}</b><br>
-        {item.get('institution')}<br>
-        {item.get('chapter')} | {item.get('year')}<br><br>
-        {item.get('title')}<br><br>
+        <b>Institution:</b> {item.get('institution')}<br>
+        <b>Chapter:</b> {item.get('chapter')} | {item.get('year')}<br><br>
+        <b>{item.get('title')}</b><br><br>
         {item.get('report')}
         </div>
         """, unsafe_allow_html=True)
@@ -357,36 +369,36 @@ elif page == "Students":
         if item.get("image"):
             st.image(display_image(item.get("image")),
                      use_container_width=True)
-            
-# ---------------- ADMIN PANEL ---------------- #
+# ================== ADMIN PANEL ================== #
 
 elif page == "Admin":
 
     if not st.session_state.logged_in:
-        st.warning("🔐 Login required")
+        st.warning("🔐 Please login first")
         st.stop()
 
-    st.markdown("<h3 class='section-title'>Admin Panel</h3>", unsafe_allow_html=True)
+    st.markdown("<h3 class='section-title'>🛠 Admin Panel</h3>", unsafe_allow_html=True)
 
-    # ✅ Tabs (FIXED ISSUE)
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "Announcements", "Events", "Expertise",
-        "Recognitions", "Students", "PDF Upload"
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "Announcements", "Events", "Expertise", "Recognitions", "Students"
     ])
 
-    # ---------------- ANNOUNCEMENTS ---------------- #
+    # ================== ANNOUNCEMENTS ================== #
     with tab1:
+
+        st.subheader("➕ Add Announcement")
 
         title = st.text_input("Title", key="ann_title")
         date = st.date_input("Date", key="ann_date")
         time = st.text_input("Time", key="ann_time")
         venue = st.text_input("Venue", key="ann_venue")
-        guest = st.text_input("Guest", key="ann_guest")
+        guest = st.text_input("Chief Guest / Resource Person", key="ann_guest")
         notes = st.text_area("Notes", key="ann_notes")
         division = st.selectbox("Division", divisions, key="ann_div")
 
         if st.button("Save Announcement", key="ann_save"):
             announcements.append({
+                "id": generate_id(),
                 "title": clean_text(title),
                 "date": date.strftime("%Y-%m-%d"),
                 "time": time,
@@ -396,27 +408,31 @@ elif page == "Admin":
                 "division": division
             })
             save_github_json(ANN_FILE, announcements)
-            st.success("Saved")
+            st.success("Saved successfully")
+            st.rerun()
 
-    # ---------------- EVENTS ---------------- #
+    # ================== EVENTS ================== #
     with tab2:
+
+        st.subheader("➕ Add Event")
 
         title = st.text_input("Title", key="ev_title")
         date = st.date_input("Date", key="ev_date")
         time = st.text_input("Time", key="ev_time")
         venue = st.text_input("Venue", key="ev_venue")
-        guest = st.text_input("Guest", key="ev_guest")
-        participants = st.number_input("Participants", key="ev_part")
-        report = st.text_area("Report", key="ev_report")
+        guest = st.text_input("Chief Guest", key="ev_guest")
+        participants = st.number_input("Participants", min_value=0, key="ev_part")
+        report = st.text_area("Report (300-400 words)", key="ev_report")
 
         image_file = st.file_uploader("Upload Image", key="ev_img")
         image = upload_image(image_file)
 
-        caption = st.text_input("Caption", key="ev_cap")
+        caption = st.text_input("Image Caption", key="ev_cap")
         division = st.selectbox("Division", divisions, key="ev_div")
 
         if st.button("Save Event", key="ev_save"):
             events.append({
+                "id": generate_id(),
                 "title": clean_text(title),
                 "date": date.strftime("%Y-%m-%d"),
                 "time": time,
@@ -429,22 +445,26 @@ elif page == "Admin":
                 "division": division
             })
             save_github_json(EVENT_FILE, events)
-            st.success("Saved")
+            st.success("Saved successfully")
+            st.rerun()
 
-    # ---------------- EXPERTISE ---------------- #
+    # ================== EXPERTISE ================== #
     with tab3:
 
-        expert = st.text_input("Expert", key="ex_exp")
-        title = st.text_input("Title", key="ex_title")
-        report = st.text_area("Report", key="ex_report")
+        st.subheader("➕ Add Expertise")
+
+        expert = st.text_input("Expert Name", key="ex_name")
+        title = st.text_input("Title (max 10 words)", key="ex_title")
+        report = st.text_area("Report (200-250 words)", key="ex_report")
 
         image_file = st.file_uploader("Upload Image", key="ex_img")
         image = upload_image(image_file)
 
-        caption = st.text_input("Caption", key="ex_cap")
+        caption = st.text_input("Image Caption", key="ex_cap")
 
         if st.button("Save Expertise", key="ex_save"):
             expertise.append({
+                "id": generate_id(),
                 "expert": clean_text(expert),
                 "title": clean_text(title),
                 "report": clean_paragraph(report),
@@ -452,43 +472,51 @@ elif page == "Admin":
                 "caption": clean_text(caption)
             })
             save_github_json(EXPERT_FILE, expertise)
-            st.success("Saved")
+            st.success("Saved successfully")
+            st.rerun()
 
-    # ---------------- RECOGNITIONS ---------------- #
+    # ================== RECOGNITIONS ================== #
     with tab4:
 
-        name = st.text_input("Name", key="rec_name")
-        number = st.text_input("Member No", key="rec_num")
-        achievement = st.text_area("Achievement", key="rec_ach")
+        st.subheader("➕ Add Recognition")
+
+        name = st.text_input("Member Name", key="rec_name")
+        number = st.text_input("Member Number", key="rec_num")
+        achievement = st.text_area("Achievement Details", key="rec_ach")
 
         image_file = st.file_uploader("Upload Image", key="rec_img")
         image = upload_image(image_file)
 
         if st.button("Save Recognition", key="rec_save"):
             recognitions.append({
+                "id": generate_id(),
                 "name": clean_text(name),
                 "number": number,
                 "achievement": clean_paragraph(achievement),
                 "image": image
             })
             save_github_json(RECOG_FILE, recognitions)
-            st.success("Saved")
+            st.success("Saved successfully")
+            st.rerun()
 
-    # ---------------- STUDENTS ---------------- #
+    # ================== STUDENTS ================== #
     with tab5:
 
+        st.subheader("➕ Add Student Entry")
+
         name = st.text_input("Student Name", key="stu_name")
-        chapter = st.text_input("Chapter", key="stu_ch")
-        year = st.text_input("Year", key="stu_year")
+        chapter = st.text_input("Student Chapter", key="stu_ch")
+        year = st.text_input("Year of Study", key="stu_year")
         institution = st.text_input("Institution", key="stu_inst")
-        title = st.text_input("Title", key="stu_title")
-        report = st.text_area("Report", key="stu_rep")
+        title = st.text_input("Project / Achievement Title", key="stu_title")
+        report = st.text_area("Report", key="stu_report")
 
         image_file = st.file_uploader("Upload Image", key="stu_img")
         image = upload_image(image_file)
 
         if st.button("Save Student", key="stu_save"):
             students.append({
+                "id": generate_id(),
                 "name": clean_text(name),
                 "chapter": chapter,
                 "year": year,
@@ -498,65 +526,186 @@ elif page == "Admin":
                 "image": image
             })
             save_github_json(STUDENT_FILE, students)
-            st.success("Saved")
+            st.success("Saved successfully")
+            st.rerun()
+# ================== EDIT + DELETE SYSTEM ================== #
 
-    # ---------------- PDF UPLOAD ---------------- #
-    with tab6:
+elif page == "Admin":
 
-        cover = st.file_uploader("Cover PDF", key="pdf1")
-        chairman = st.file_uploader("Chairman PDF", key="pdf2")
-        secretary = st.file_uploader("Secretary PDF", key="pdf3")
-        special = st.file_uploader("Special PDF", key="pdf4")
+    if not st.session_state.logged_in:
+        st.warning("🔐 Please login first")
+        st.stop()
 
-        if st.button("Upload PDFs", key="pdf_save"):
-            save_uploaded_pdf(cover, "cover.pdf")
-            save_uploaded_pdf(chairman, "chairman.pdf")
-            save_uploaded_pdf(secretary, "secretary.pdf")
-            save_uploaded_pdf(special, "special.pdf")
-            st.success("Uploaded")
+    st.markdown("<h3 class='section-title'>🛠 Manage Data</h3>", unsafe_allow_html=True)
 
-# ---------------- PDF ENGINE ---------------- #
+    dataset = st.selectbox(
+        "Select Section",
+        ["Announcements", "Events", "Expertise", "Recognitions", "Students"]
+    )
+
+    if dataset == "Announcements":
+        data = announcements
+        file_name = ANN_FILE
+
+    elif dataset == "Events":
+        data = events
+        file_name = EVENT_FILE
+
+    elif dataset == "Expertise":
+        data = expertise
+        file_name = EXPERT_FILE
+
+    elif dataset == "Recognitions":
+        data = recognitions
+        file_name = RECOG_FILE
+
+    else:
+        data = students
+        file_name = STUDENT_FILE
+
+    st.markdown("### ✏️ Edit / Delete Entries")
+
+    for i, item in enumerate(data):
+
+        with st.expander(f"{item.get('title', item.get('name','Entry'))}"):
+
+            new_title = st.text_input("Title", item.get("title",""), key=f"t_{i}")
+            new_report = st.text_area("Report / Notes", item.get("report", item.get("notes","")), key=f"r_{i}")
+
+            col1, col2 = st.columns(2)
+
+            if col1.button("💾 Update", key=f"u_{i}"):
+                if dataset == "Announcements":
+                    data[i]["title"] = new_title
+                    data[i]["notes"] = new_report
+                else:
+                    data[i]["title"] = new_title
+                    data[i]["report"] = new_report
+
+                save_github_json(file_name, data)
+                st.success("Updated")
+                st.rerun()
+
+            if col2.button("❌ Delete", key=f"d_{i}"):
+                data.pop(i)
+                save_github_json(file_name, data)
+                st.warning("Deleted")
+                st.rerun()
+
+
+# ================== PDF SYSTEM ================== #
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.pagesizes import A4
 from PyPDF2 import PdfMerger
 
-style = ParagraphStyle(name="Normal", fontName="Times-Roman", fontSize=11, leading=14)
+title_style = ParagraphStyle(name='Title', fontName='Times-Bold', fontSize=16, spaceAfter=10)
+body_style = ParagraphStyle(name='Body', fontName='Times-Roman', fontSize=11, leading=15)
+
+def header_footer(c, doc):
+    c.setFont("Times-Roman", 9)
+
+    # Header
+    c.drawString(40, 800, "E-Newsletter IEI-MLC")
+    c.drawRightString(550, 800, "www.ieimadurailc.org")
+
+    # Footer
+    c.drawString(40, 30, "Institution of Engineers (India) – Madurai Local Centre")
+    c.drawString(40, 18, "Promoting Engineering Excellence for Nation Building")
+    c.drawString(40, 6, "Contact: madurailc@ieindia.org")
+
+    c.drawRightString(550, 6, f"Page {doc.page}")
+
 
 def generate_content_pdf():
+
     doc = SimpleDocTemplate("pdf/content.pdf", pagesize=A4)
     story = []
 
+    # ANNOUNCEMENTS
+    story.append(Paragraph("ANNOUNCEMENTS", title_style))
     for item in announcements:
-        story.append(Paragraph(item.get("title",""), style))
+        story.append(Paragraph(item.get("title",""), body_style))
+        story.append(Paragraph(item.get("notes",""), body_style))
         story.append(Spacer(1,10))
-
     story.append(PageBreak())
 
+    # EVENTS
+    story.append(Paragraph("EVENTS CONDUCTED", title_style))
     for item in events:
-        story.append(Paragraph(item.get("title",""), style))
-        story.append(Paragraph(item.get("report",""), style))
+        story.append(Paragraph(item.get("title",""), body_style))
+        story.append(Paragraph(item.get("report",""), body_style))
+        story.append(Spacer(1,10))
+    story.append(PageBreak())
+
+    # EXPERTISE
+    story.append(Paragraph("ENGINEERING EXPERTISE", title_style))
+    for item in expertise:
+        story.append(Paragraph(item.get("title",""), body_style))
+        story.append(Paragraph(item.get("report",""), body_style))
+        story.append(Spacer(1,10))
+    story.append(PageBreak())
+
+    # RECOGNITIONS
+    story.append(Paragraph("MEMBER RECOGNITIONS", title_style))
+    for item in recognitions:
+        story.append(Paragraph(item.get("name",""), body_style))
+        story.append(Paragraph(item.get("achievement",""), body_style))
+        story.append(Spacer(1,10))
+    story.append(PageBreak())
+
+    # STUDENTS
+    story.append(Paragraph("STUDENT CORNER", title_style))
+    for item in students:
+        story.append(Paragraph(item.get("name",""), body_style))
+        story.append(Paragraph(item.get("report",""), body_style))
         story.append(Spacer(1,10))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=header_footer, onLaterPages=header_footer)
+
     return "pdf/content.pdf"
 
-def generate_full_pdf(a,e,x,r,s):
+
+def generate_full_pdf(a, e, x, r, s):
+
     merger = PdfMerger()
 
-    for f in ["cover.pdf","chairman.pdf","secretary.pdf"]:
+    # Cover pages
+    for f in ["cover.pdf", "chairman.pdf", "secretary.pdf"]:
         path = f"static/{f}"
         if os.path.exists(path):
             merger.append(path)
 
+    # Main content
     merger.append(generate_content_pdf())
 
+    # Special page
     if os.path.exists("static/special.pdf"):
         merger.append("static/special.pdf")
 
-    output = "pdf/final.pdf"
+    output = "pdf/final_newsletter.pdf"
     merger.write(output)
     merger.close()
 
     return output
+
+
+# ================== DOWNLOAD BUTTON ================== #
+
+if page == "Home":
+
+    st.markdown("### 📥 Download Newsletter")
+
+    if st.button("Generate Full Newsletter"):
+
+        file = generate_full_pdf(
+            announcements, events, expertise, recognitions, students
+        )
+
+        with open(file, "rb") as f:
+            st.download_button(
+                "⬇ Download PDF",
+                f,
+                file_name="IEI_Newsletter.pdf"
+            )
